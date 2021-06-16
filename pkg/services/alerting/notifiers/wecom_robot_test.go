@@ -1,8 +1,8 @@
 package notifiers
 
 import (
-	"github.com/liubo0127/grafana/pkg/models"
-	"github.com/liubo0127/grafana/pkg/services/alerting"
+	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/grafana/grafana/pkg/services/alerting"
 	"reflect"
 	"testing"
 )
@@ -11,7 +11,9 @@ func TestWeComRobotNotifier_Notify(t *testing.T) {
 	type fields struct {
 		NotifierBase NotifierBase
 		Webhook      string
-		log          Logger
+		UserId       string
+		MobileNumber string
+		log          log.Logger
 	}
 	type args struct {
 		evalContext *alerting.EvalContext
@@ -29,6 +31,8 @@ func TestWeComRobotNotifier_Notify(t *testing.T) {
 			w := &WeComRobotNotifier{
 				NotifierBase: tt.fields.NotifierBase,
 				Webhook:      tt.fields.Webhook,
+				UserId:       tt.fields.UserId,
+				MobileNumber: tt.fields.MobileNumber,
 				log:          tt.fields.log,
 			}
 			if err := w.Notify(tt.args.evalContext); (err != nil) != tt.wantErr {
@@ -45,7 +49,7 @@ func Test_newWeComRobotNotifier(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    Notifier
+		want    alerting.Notifier
 		wantErr bool
 	}{
 		// TODO: Add test cases.

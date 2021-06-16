@@ -80,10 +80,10 @@ func init() {
 				Required:     true,
 			},
 			{
-				Label:        "DepartmentId",
-				Element:      alerting.ElementTypeInput,
-				InputType:    alerting.InputTypeText,
-				Description:  "You can enter multiple DepartmentId using a \";\" separator. " +
+				Label:     "DepartmentId",
+				Element:   alerting.ElementTypeInput,
+				InputType: alerting.InputTypeText,
+				Description: "You can enter multiple DepartmentId using a \";\" separator. " +
 					"If specified, all members will receive alert message in department",
 				PropertyName: "DepartmentId",
 			},
@@ -298,7 +298,7 @@ func (w *WeComNotifier) Notify(evalContext *alerting.EvalContext) error {
 		content += "Error:\n  " + evalContext.Error.Error() + "\n\n"
 	}
 
-	if w.NeedsImage() && evalContext.ImageOnDiskPath == "" && evalContext.ImagePublicURL != "" {
+	if w.NeedsImage() && evalContext.ImagePublicURL != "" {
 		content += "ImageUrl:\n  " + evalContext.ImagePublicURL + "\n"
 	}
 

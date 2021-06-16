@@ -11,13 +11,17 @@ import (
 	"github.com/grafana/grafana/pkg/services/alerting"
 	"io/ioutil"
 	"os"
+	"strconv"
+	"strings"
 )
 
 // WeComRobotNotifier is responsible for sending alert notification to WeCom group robot
 type WeComRobotNotifier struct {
 	NotifierBase
-	Webhook string
-	log     log.Logger
+	Webhook      string
+	UserId       string
+	MobileNumber string
+	log          log.Logger
 }
 
 func init() {
@@ -35,6 +39,22 @@ func init() {
 				PropertyName: "webhook",
 				Required:     true,
 			},
+			{
+				Label:        "UserId",
+				Element:      alerting.ElementTypeInput,
+				InputType:    alerting.InputTypeText,
+				Description:  "You can enter multiple UserId using a \";\" separator",
+				PropertyName: "userid",
+				Required:     false,
+			},
+			{
+				Label:        "Mobile",
+				Element:      alerting.ElementTypeInput,
+				InputType:    alerting.InputTypeText,
+				Description:  "You can enter multiple phone number using a \";\" separator",
+				PropertyName: "mobile",
+				Required:     false,
+			},
 		},
 	})
 }
@@ -44,9 +64,13 @@ func newWeComRobotNotifier(model *models.AlertNotification) (alerting.Notifier, 
 	if webhook == "" {
 		return nil, alerting.ValidationError{Reason: "Could not find webhook in settings"}
 	}
+	userId := strings.ReplaceAll(model.Settings.Get("userid").MustString(), " ", "")
+	mobileNumber := strings.ReplaceAll(model.Settings.Get("mobile").MustString(), " ", "")
 	return &WeComRobotNotifier{
 		NotifierBase: NewNotifierBase(model),
-		Webhook:      model.Settings.Get("webhook").MustString(),
+		Webhook:      webhook,
+		UserId:       userId,
+		MobileNumber: mobileNumber,
 		log:          log.New("alerting.notifier.wecom_robot"),
 	}, nil
 }
@@ -55,34 +79,55 @@ func newWeComRobotNotifier(model *models.AlertNotification) (alerting.Notifier, 
 func (w *WeComRobotNotifier) Notify(evalContext *alerting.EvalContext) error {
 	w.log.Info("Sending WeCom Group Robot")
 
-	content := fmt.Sprintf("# %v\n\n%s**%v**%s\n\n",
-		evalContext.GetNotificationTitle(),
-		"<font color=\"warning\">",
-		evalContext.Rule.Message,
-		"</font>",
-	)
+	content := evalContext.GetNotificationTitle()
+	content += "\n\n"
 
-	if w.NeedsImage() && evalContext.ImagePublicURL != "" {
-		content += fmt.Sprintf("[%s](%s)\n", evalContext.ImagePublicURL, evalContext.ImagePublicURL)
+	if evalContext.Rule.State != models.AlertStateOK {
+		content += "Message:\n  " + evalContext.Rule.Message + "\n\n"
 	}
 
-	for index, match := range evalContext.EvalMatches {
+	for index, evt := range evalContext.EvalMatches {
 		if index == 0 {
-			content += "**Metric:**\n"
+			content += "Metric:\n"
 		}
 
 		if index > 4 {
-			content += ">  ...\n"
+			content += "  ...\n"
 			break
 		}
+		content += "  " + evt.Metric + "=" + strconv.FormatFloat(evt.Value.Float64, 'f', -1, 64) + "\n"
+	}
+	content += "\n"
 
-		content += fmt.Sprintf("> `%s=%s`\n> \n", match.Metric, match.Value)
+	if evalContext.Error != nil {
+		content += "Error:\n  " + evalContext.Error.Error() + "\n\n"
+	}
+
+	if w.NeedsImage() && evalContext.ImagePublicURL != "" {
+		content += "ImageUrl:\n  " + evalContext.ImagePublicURL + "\n"
+	}
+
+	mentionedList := make([]string, 5)
+	mentionedMobileList := make([]string, 5)
+
+	if len(w.UserId) != 0 {
+		for _, user := range strings.Split(w.UserId, ";") {
+			mentionedList = append(mentionedList, user)
+		}
+	}
+
+	if len(w.MobileNumber) != 0 {
+		for _, number := range strings.Split(w.MobileNumber, ";") {
+			mentionedMobileList = append(mentionedMobileList, number)
+		}
 	}
 
 	body := map[string]interface{}{
-		"msgtype": "markdown",
-		"markdown": map[string]string{
-			"content": content,
+		"msgtype": "text",
+		"text": map[string]interface{}{
+			"content":               content,
+			"mentioned_list":        mentionedList,
+			"mentioned_mobile_list": mentionedMobileList,
 		},
 	}
 
@@ -91,10 +136,6 @@ func (w *WeComRobotNotifier) Notify(evalContext *alerting.EvalContext) error {
 		w.log.Error("Failed to marshal body", "error", err)
 		return err
 	}
-
-	//fmt.Println(body)
-
-	//fmt.Println(string(bodyJSON))
 
 	msgCmd := &models.SendWebhookSync{
 		Url:  w.Webhook,
@@ -116,7 +157,6 @@ func (w *WeComRobotNotifier) Notify(evalContext *alerting.EvalContext) error {
 
 		filePath = evalContext.ImageOnDiskPath
 
-		//fmt.Println(evalContext.ImageOnDiskPath)
 		imgFile, err := os.Open(filePath)
 		defer imgFile.Close()
 		if err != nil {
@@ -132,7 +172,7 @@ func (w *WeComRobotNotifier) Notify(evalContext *alerting.EvalContext) error {
 			"msgtype": "image",
 			"image": map[string]string{
 				"base64": imgBase64Str,
-				"md5":	md5Str,
+				"md5":    md5Str,
 			},
 		}
 
@@ -141,10 +181,6 @@ func (w *WeComRobotNotifier) Notify(evalContext *alerting.EvalContext) error {
 			w.log.Error("Failed to marshal body", "error", err)
 			return err
 		}
-
-		//fmt.Println(imgBody)
-
-		//fmt.Println(string(imgBodyJSON))
 
 		imgCmd := &models.SendWebhookSync{
 			Url:  w.Webhook,
